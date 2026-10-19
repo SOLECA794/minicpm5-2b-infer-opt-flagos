@@ -20,6 +20,8 @@ Usage
     python scripts/score.py --demo              # run the built-in self-check
     python scripts/score.py --before b.csv --after a.csv
     python scripts/score.py --before b.csv --after a.csv --acc 0.958 --expert 8.5
+    python scripts/score.py --verify-baseline m0.csv --vendor tianshu   # M0 gate
+    python scripts/score.py --verify-baseline m0.csv --tol 0.02         # looser gate
 
 CSV format: whatever `benchmark_throughput_serve.py` writes to
 `benchmark_results/summary_*.csv` (columns: Prefill, Decode, Conc, Num Prompts,
@@ -138,6 +140,50 @@ def print_baselines() -> None:
     print( "  per-vendor perf = mean(perf(4k), perf(16k))")
 
 
+def verify_baseline(measured: dict, vendor: str, tol: float = 0.01) -> int:
+    """M0 gate: the machine under test must reproduce the official baseline.
+
+    A host that is off by 20% would silently turn every later "improvement"
+    into an artefact of a wrong denominator. Both total throughput and TTFT
+    must land within `tol` (relative) of the published numbers before any
+    optimisation result is trusted.
+
+    Returns 0 when every scenario is within tolerance, 1 otherwise.
+    """
+    ref = BASELINE[vendor]
+    print(f"M0 baseline reproduction check — vendor={vendor}, tolerance={tol:.1%}\n")
+    hdr = (f"{'scen':<5} {'metric':<11} {'official':>12} {'measured':>12} "
+           f"{'delta':>9} {'verdict':<7}")
+    print(hdr)
+    print("-" * len(hdr))
+    bad: list[str] = []
+    for scen in ("4k", "16k"):
+        m = measured.get(scen)
+        if not m:
+            print(f"{scen:<5} {'-':<11} {'-':>12} {'MISSING':>12} {'-':>9} {'SKIP':<7}")
+            bad.append(f"{scen}/missing")
+            continue
+        for metric, key in (("total tok/s", "total_tok_s"), ("TTFT (ms)", "ttft_ms")):
+            want = ref[scen][key]
+            got = m[key]
+            delta = (got - want) / want
+            ok = abs(delta) <= tol
+            if not ok:
+                bad.append(f"{scen}/{key}")
+            print(f"{scen:<5} {metric:<11} {want:>12.2f} {got:>12.2f} "
+                  f"{delta:>+8.1%} {'OK' if ok else 'FAIL':<7}")
+    print()
+    if bad:
+        print(f"BASELINE MISMATCH on: {', '.join(bad)}")
+        print("Do not report improvements from this host until the baseline is reproduced.")
+        print("Causes to rule out first: wrong VLLM_PLUGINS, missing --compilation-config")
+        print("(tianshu only), thermal/clock throttling, a shared or partially-allocated GPU,")
+        print("and a different vllm-plugin-FL / FlagGems commit than the pinned ones.")
+        return 1
+    print("M0 PASS: this host reproduces the official baseline within tolerance.")
+    return 0
+
+
 def evaluate(before: dict, after: dict, acc: float | None, expert: float | None) -> int:
     verdicts: list[Verdict] = []
     for vendor in ("tianshu", "metax"):
@@ -220,7 +266,18 @@ def _selfcheck() -> int:
     assert abs(v2.improvement - 1.0) < 1e-9, v2.improvement
     assert abs(v2.perf_score - 70.0) < 1e-6, v2.perf_score
 
-    print("self-check passed: 6/6 assertions")
+    # verify_baseline: exact reproduction passes, a 20% drift fails
+    exact = {s: dict(v) for s, v in BASELINE["tianshu"].items()}
+    assert verify_baseline(exact, "tianshu", 0.01) == 0
+    drifted = {s: dict(v) for s, v in BASELINE["tianshu"].items()}
+    drifted["16k"]["total_tok_s"] *= 1.20
+    assert verify_baseline(drifted, "tianshu", 0.01) == 1
+    # TTFT drift alone must also trip the gate
+    ttft_only = {s: dict(v) for s, v in BASELINE["tianshu"].items()}
+    ttft_only["4k"]["ttft_ms"] *= 1.05
+    assert verify_baseline(ttft_only, "tianshu", 0.01) == 1
+
+    print("self-check passed: 9/9 assertions")
     return 0
 
 
@@ -232,8 +289,19 @@ def main(argv: list[str] | None = None) -> int:
                     help="which vendor's baseline to compare against (default tianshu)")
     ap.add_argument("--acc", type=float, help="measured math_500 Level3 accuracy")
     ap.add_argument("--expert", type=float, help="expected expert score 0-100 for the report")
+    ap.add_argument("--verify-baseline", type=Path, metavar="CSV",
+                    help="M0 gate: check this summary CSV reproduces the official baseline")
+    ap.add_argument("--tol", type=float, default=0.01,
+                    help="relative tolerance for --verify-baseline (default 0.01 = 1%%)")
     ap.add_argument("--demo", action="store_true", help="run the self-check")
     args = ap.parse_args(argv)
+
+    if args.verify_baseline:
+        measured = read_summary(args.verify_baseline)
+        if not measured:
+            print(f"error: no matching scenarios in {args.verify_baseline}", file=sys.stderr)
+            return 1
+        return verify_baseline(measured, args.vendor, args.tol)
 
     if args.demo or not (args.before and args.after):
         print_baselines()

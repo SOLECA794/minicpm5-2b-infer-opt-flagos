@@ -23,7 +23,9 @@
 [✅] 根因定位            天数 16k 的 599s TTFT → attention 后端走错路径
 [✅] 技术方案正文         proposals/01-initial-technical-plan.md
 [✅] PDF 生成流水线       scripts/build_proposal.py（缺团队信息则拒绝生成）
-[⬜] 团队介绍            ← 需要 Jack 提供成员信息
+[✅] 团队介绍            单人参赛（苏子恒），proposals/team.yaml 已填全
+[✅] 算力申请材料        proposals/算力申请-苏子恒.pdf（9 页，0.53 MB）
+[⬜] 提交算力申请         ← 需在平台上传，先到先得
 [⬜] 环境复现 / 优化      ← 等算力
 ```
 
@@ -57,7 +59,10 @@ python scripts/fetch_race.py --diff        # CI 友好：有变动则 exit 1
 # 2. 查看官方基线 + 评分规则，并跑自检
 python scripts/score.py --demo
 
-# 3. 算一次成绩（CSV 来自 benchmark_throughput_serve.py 的输出）
+# 3. M0 门禁：先确认这台机器复现得出官方 baseline（误差 ≤1%）
+python scripts/score.py --verify-baseline bench/summary_m0.csv --vendor tianshu
+
+# 4. 算一次成绩（CSV 来自 benchmark_throughput_serve.py 的输出）
 python scripts/score.py --before bench/summary_base.csv \
                         --after  bench/summary_opt.csv  \
                         --acc 0.958 --expert 85
@@ -111,11 +116,12 @@ python scripts/pdf_textdump.py proposals/算力申请-<队名>.pdf
 │       └── root-cause-tianshu-16k.md 599s TTFT 根因分析
 ├── proposals/                  算力申请材料
 │   ├── 01-initial-technical-plan.md  初步技术方案（评审 60%）
-│   ├── team.yaml                     团队介绍数据源（评审 40%）← 待填写
-│   └── team.example.yaml             示例，用于冒烟测试 PDF 流水线
+│   ├── team.yaml                     团队介绍数据源（评审 40%），已填全
+│   ├── 算力申请-苏子恒.pdf            提交件（9 页，0.53 MB）· 含联系方式，已 gitignore
+│   └── team.example.yaml             虚构示例，用于冒烟测试 PDF 流水线
 ├── scripts/                    工具脚本
 │   ├── fetch_race.py           赛事元数据抓取 + diff
-│   ├── score.py                成绩计算器 + 护栏校验
+│   ├── score.py                成绩计算器 + 护栏校验 + M0 baseline 门禁
 │   ├── build_proposal.py       Markdown → PDF（含 TODO 门禁）
 │   └── pdf_textdump.py         PDF 文本导出（无阅读器时校验用）
 ├── src/                        我们自己的优化实现
@@ -145,6 +151,14 @@ python scripts/pdf_textdump.py proposals/算力申请-<队名>.pdf
 精度   math_500 Level 3  acc ≥ 0.95   (baseline 0.962)
 TTFT   ≤ baseline × 1.01
 ```
+
+### 为什么要有 M0 门禁
+
+评分是**相对提升**，分母就是官方 baseline。如果实验机器本身偏差 20%
+（共享卡、降频、`VLLM_PLUGINS` 没设对、漏了天数的 `--compilation-config`、
+框架 commit 与 pinned 版本不一致），后面每一次「提升」都是错误分母的产物。
+所以拿到算力后的**第一件事**是 `--verify-baseline`，吞吐与 TTFT 双双落在
+±1% 内才允许开始优化。这个门禁同时把「机器状态波动」和「真的优化了」区分开。
 
 ---
 
