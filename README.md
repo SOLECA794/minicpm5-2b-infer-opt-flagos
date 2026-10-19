@@ -176,6 +176,23 @@ TTFT   ≤ baseline × 1.01
 
 ---
 
+## 远程仓库
+
+`origin` 走 **SSH** 而非 HTTPS —— 本机网络下 `github.com:443` 不通
+（`api.github.com` 正常），但 `github.com:22` 与 `ssh.github.com:443` 可达。
+仓库内已设：
+
+```bash
+git remote set-url origin git@github.com:SOLECA794/minicpm5-2b-infer-opt-flagos.git
+git config core.sshCommand "ssh -o ControlMaster=no -o ControlPath=none"
+```
+
+第二行是为了绕开 `~/.ssh/config` 里全局的 `ControlMaster auto` —— 复用已有
+socket 时 OpenSSH 会报 `getsockname failed: Not a socket`。
+若换到网络通畅的环境，改回 HTTPS 也可以，两者推的是同一个仓库。
+
+---
+
 ## 复现上游环境
 
 ```bash
