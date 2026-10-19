@@ -1,0 +1,49 @@
+{
+  "code": 200,
+  "data": {
+    "actions": [],
+    "category": null,
+    "children": null,
+    "content": {
+      "content": "{\"tabs\":[]}",
+      "id": "problem",
+      "label": "赛题",
+      "type": "html"
+    },
+    "cover": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/VwK0jWih/%E7%AE%97%E5%AD%90%E8%B5%9B%E7%BC%A9%E7%95%A5%E5%9B%BE-%E4%B8%AD%E6%96%87.png",
+    "detail_link": "https://kernelgen.flagos.io/challenge?lang=zh",
+    "detail_type": "link",
+    "has_detail": true,
+    "introduction": "众智FlagOS 社区联合华为、MiniMax 发起的 FlagOS 48 小时算子赏金挑战赛于 2026年9月7日 12:00（UTC+8）在上海正式启动。这是一场面向 AI 系统开发者的实战竞技，采用线上报名机制，希望通过真实工程问题驱动算子优化创新实践，突破 AI 计算性能瓶颈。",
+    "max_team_member": 3,
+    "metadata": {
+      "last_updated": "2026-09-07T20:38:09",
+      "source_url": null
+    },
+    "org": "众智FlagOS 、华为、MiniMax",
+    "org_url": "",
+    "parent_rid": null,
+    "race_end": "2026-09-09T12:00:00",
+    "race_info": {
+      "deadline": "2026-09-09",
+      "prize_amount": "24,000"
+    },
+    "race_start": "2026-09-07T12:00:00",
+    "race_time": "",
+    "register_end": "2026-09-09T12:00:00",
+    "register_start": "2026-09-07T12:00:00",
+    "register_time": null,
+    "rid": "2a6a3957",
+    "series_type": 1,
+    "share": {
+      "desc": "众智FlagOS 社区联合华为、MiniMax 发起的 FlagOS 48 小时算子赏金挑战赛于 2026年9月7日 12:00（UTC+8）在上海正式启动。这是一场面向 AI 系统开发者的实战竞技，采用线上报名机制，希望通过真实工程问题驱动算子优化创新实践，突破 AI 计算性能瓶颈。",
+      "image": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/VwK0jWih/%E7%AE%97%E5%AD%90%E8%B5%9B%E7%BC%A9%E7%95%A5%E5%9B%BE-%E4%B8%AD%E6%96%87.png",
+      "title": "FlagOS 48小时算子赏金挑战赛上海站 第二场"
+    },
+    "sponsors": null,
+    "support_resource_apply": true,
+    "tabs": null,
+    "title": "FlagOS 48小时算子赏金挑战赛上海站 第二场"
+  },
+  "message": "successfully"
+}

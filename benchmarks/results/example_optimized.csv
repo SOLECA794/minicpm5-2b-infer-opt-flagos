@@ -1,0 +1,3 @@
+Prefill,Decode,Conc,Num Prompts,Benchmark Duration (s),Output tok/s,Total tok/s,Mean TTFT (ms)
+4096,1024,64,256,450.20,582.4,2912.00,11000.00
+16384,1024,64,128,900.10,145.5,2600.00,420000.00

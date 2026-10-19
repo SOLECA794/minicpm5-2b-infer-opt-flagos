@@ -1,0 +1,70 @@
+# ---- upstream clones (large, reproducible) ----
+upstream/
+_recon/
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ---- virtualenv ----
+.venv/
+venv/
+ENV/
+env/
+
+# ---- benchmark / experiment artifacts ----
+benchmark_results/
+benchmarks/results/*.csv
+benchmarks/results/*.json
+benchmarks/results/*.log
+!benchmarks/results/.gitkeep
+
+# ---- model weights (never commit) ----
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.gguf
+models/
+MiniCPM5-2B/
+
+# ---- editor / OS ----
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+
+# ---- misc ----
+*.log
+tmp/
+.cache/

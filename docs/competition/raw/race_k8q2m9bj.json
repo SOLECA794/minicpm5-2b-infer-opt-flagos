@@ -1,0 +1,70 @@
+{
+  "code": 200,
+  "data": {
+    "actions": [
+      {
+        "items": [],
+        "label": "立即报名",
+        "type": "register",
+        "url": "https://jwolpxeehx.feishu.cn/share/base/form/shrcnb2jUfDDjvttaYjwy3GEfCh"
+      },
+      {
+        "items": [
+          {
+            "image": "",
+            "label": "微信交流群",
+            "name": "weixin",
+            "url": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/itXk6wDw/0613_bj_wx.png"
+          },
+          {
+            "image": "",
+            "label": "Discord 社区",
+            "name": "discord",
+            "url": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/6XZuXMxa/tianjin_0528_discord_group.png"
+          }
+        ],
+        "label": "入群交流",
+        "type": "joingroup",
+        "url": ""
+      }
+    ],
+    "category": "normal",
+    "children": null,
+    "content": {},
+    "cover": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/PB6VfFLc/kernelgen_0613_bj_banner_cn.png",
+    "detail_link": "https://kernelgen.flagos.io/challenge",
+    "detail_type": "link",
+    "has_detail": false,
+    "introduction": "“FlagOS 48小时算子赏金挑战赛北京站”由众智FlagOS社区和阶跃星辰联合主办，将于 智源大会期间在北京·中关村国际创新中心举行，并面向全球开发者开放报名。这是一场面向所有 AI 系统开发者的实战竞技，以Triton 或 Triton-TLE 为核心利器，发起算子优化挑战，通过真实工程问题驱动创新实践，突破AI计算性能的瓶颈。\n主办方推荐使用 KernelGen 算子自动生成平台，助力选手高效产出多芯片 Triton 和 Triton-TLE 高性能算子。",
+    "max_team_member": 3,
+    "metadata": {
+      "last_updated": "2026-09-07T13:29:25",
+      "source_url": null
+    },
+    "org": "众智FlagOS社区、阶跃星辰",
+    "org_url": "",
+    "parent_rid": null,
+    "race_end": "2026-06-13T15:00:00",
+    "race_info": {
+      "deadline": "2026-06-13",
+      "prize_amount": "6,000"
+    },
+    "race_start": "2026-06-11T15:00:00",
+    "race_time": "2026年6月11日 15:00 - 2026年6月13日 15:00（北京时间 UTC+8）",
+    "register_end": null,
+    "register_start": null,
+    "register_time": null,
+    "rid": "k8q2m9bj",
+    "series_type": 1,
+    "share": {
+      "desc": "“FlagOS 48小时算子赏金挑战赛北京站”由众智FlagOS社区和阶跃星辰联合主办，将于 智源大会期间在北京·中关村国际创新中心举行，并面向全球开发者开放报名。这是一场面向所有 AI 系统开发者的实战竞技，以Triton 或 Triton-TLE 为核心利器，发起算子优化挑战，通过真实工程问题驱动创新实践，突破AI计算性能的瓶颈。\n主办方推荐使用 KernelGen 算子自动生成平台，助力选手高效产出多芯片 Triton 和 Triton-TLE 高性能算子。",
+      "image": "https://flagos.ks3-cn-beijing.ksyuncs.com/images/PB6VfFLc/kernelgen_0613_bj_banner_cn.png",
+      "title": "FlagOS 48小时算子赏金挑战赛 · 北京站"
+    },
+    "sponsors": [],
+    "support_resource_apply": true,
+    "tabs": null,
+    "title": "FlagOS 48小时算子赏金挑战赛 · 北京站"
+  },
+  "message": "successfully"
+}
