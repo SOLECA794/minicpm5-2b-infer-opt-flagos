@@ -42,6 +42,15 @@ TEAM_YAML = PROPOSALS / "team.yaml"
 # --------------------------------------------------------------------------
 FONT_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
 
+# A4 geometry in points, kept as module constants so the table column sizer can
+# budget against the real text width instead of guessing.
+from reportlab.lib.pagesizes import A4 as _A4
+from reportlab.lib.units import mm as _mm
+
+A4_WIDTH, A4_HEIGHT = _A4
+LEFT_MARGIN = 18 * _mm
+RIGHT_MARGIN = 16 * _mm
+
 BODY_FONT, BOLD_FONT, MONO_FONT = "Body", "BodyBold", "Mono"
 
 
@@ -279,7 +288,76 @@ def _split_row(line: str) -> list[str]:
     return [c.strip() for c in line.split("|")]
 
 
-def _table(header: list[str], rows: list[list[str]], styles):
+def _is_wide(ch):
+    return (
+        "\u1100" <= ch <= "\u115f"
+        or "\u2e80" <= ch <= "\ua4cf"
+        or "\uac00" <= ch <= "\ud7a3"
+        or "\uf900" <= ch <= "\ufaff"
+        or "\ufe30" <= ch <= "\ufe6f"
+        or "\uff00" <= ch <= "\uff60"
+        or "\uffe0" <= ch <= "\uffe6"
+    )
+
+
+def _display_len(s):
+    """Width in em-ish units; CJK glyphs are about twice as wide as latin."""
+    return sum(2.0 if _is_wide(ch) else 1.0 for ch in s)
+
+
+_CELL_SPLIT = re.compile(r"[\s\u3000]+")
+
+
+def _col_widths(header, rows, ncols):
+    """Size columns from measured text instead of splitting the page evenly.
+
+    An even split wraps short-but-wide cells such as ``[4096,1024,64,256]`` and
+    header words such as ``TTFT`` onto two lines, which makes the baseline table
+    hard to read. Measure with the actual font: each column first gets enough
+    room for its widest single word (so no word is broken), then the remaining
+    space is shared in proportion to how much more each column wants.
+    """
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    font, size = BODY_FONT, 8.3
+    pad = 10.0  # left + right cell padding
+    avail = A4_WIDTH - LEFT_MARGIN - RIGHT_MARGIN
+
+    need_min, need_max = [], []
+    for c in range(ncols):
+        cells = [header[c] if c < len(header) else ""] + [
+            r[c] if c < len(r) else "" for r in rows
+        ]
+        widest_word = 1.0
+        widest_cell = 1.0
+        for cell in cells:
+            if not cell:
+                continue
+            widest_cell = max(widest_cell, stringWidth(cell, font, size))
+            for word in _CELL_SPLIT.split(cell):
+                if word:
+                    widest_word = max(widest_word, stringWidth(word, font, size))
+        need_min.append(widest_word + pad)
+        need_max.append(widest_cell + pad)
+
+    if sum(need_min) >= avail:
+        # Cannot honour every word; fall back to proportional minimums.
+        scale = avail / sum(need_min)
+        return [w * scale for w in need_min]
+
+    widths = list(need_min)
+    spare = avail - sum(need_min)
+    extra_wanted = [max(0.0, need_max[i] - need_min[i]) for i in range(ncols)]
+    total_extra = sum(extra_wanted)
+    if total_extra <= 0:
+        # Everything already fits on one line: distribute the slack evenly.
+        return [w + spare / ncols for w in widths]
+    for i in range(ncols):
+        widths[i] += spare * extra_wanted[i] / total_extra
+    return widths
+
+
+def _table(header, rows, styles):
     from reportlab.lib import colors
     from reportlab.platypus import Table, TableStyle
 
@@ -288,7 +366,8 @@ def _table(header: list[str], rows: list[list[str]], styles):
     for r in rows:
         data.append([_cell_para(c, styles) for c in _pad(r, ncols)])
 
-    t = Table(data, repeatRows=1, hAlign="LEFT")
+    t = Table(data, repeatRows=1, hAlign="LEFT",
+              colWidths=_col_widths(header, rows, ncols))
     t.setStyle(
         TableStyle(
             [

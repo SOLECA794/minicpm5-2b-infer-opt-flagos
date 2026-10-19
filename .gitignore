@@ -72,3 +72,7 @@ tmp/
 # Generated compute-application PDFs (contain personal info, never commit)
 proposals/算力申请-*.pdf
 proposals/_smoketest.pdf
+# local scratch used while smoke-testing the renderer
+proposals/_solo.*
+_dump.txt
+_patch.py
