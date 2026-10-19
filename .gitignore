@@ -76,3 +76,9 @@ proposals/_smoketest.pdf
 proposals/_solo.*
 _dump.txt
 _patch.py
+
+# scratch renders from build_proposal.py verification passes
+docs/competition/_pp*.png
+docs/competition/preview_p*.png
+proposals/_preview.*
+
