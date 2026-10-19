@@ -65,6 +65,7 @@ def register_fonts() -> None:
             if p.exists():
                 try:
                     pdfmetrics.registerFont(TTFont(name, str(p)))
+                    FONT_FILES[name] = p
                     return name
                 except Exception:
                     continue
@@ -92,6 +93,8 @@ def register_fonts() -> None:
     globals()["BODY_FONT"] = ok_body
     globals()["BOLD_FONT"] = ok_bold
     globals()["MONO_FONT"] = ok_mono
+    FONT_FILES.setdefault(ok_body, FONT_DIR / "msyh.ttc")
+    _CMAP_CACHE.clear()
 
 
 # --------------------------------------------------------------------------
@@ -117,8 +120,12 @@ _EMOJI_MAP = {
     "\u2b07\ufe0f": "\u2193",
     "\u27a1\ufe0f": "\u2192",
     "\U0001f4b0": "",          # money bag
-    "\u2714\ufe0f": "\u662f",
-    "\u2714": "\u662f",
+    "\u2714\ufe0f": "\u221a",
+    "\u2714": "\u221a",
+    # U+2713/U+2717 are missing from Microsoft YaHei (checked with fontTools),
+    # so they render as tofu; U+221A / U+00D7 are present in every CJK font.
+    "\u2713": "\u221a",
+    "\u2717": "\u00d7",
 }
 
 
@@ -145,7 +152,11 @@ def inline(text: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<link href="\2">\1</link>', text)
 
     def unstash(m: re.Match[str]) -> str:
-        return f'<font face="{MONO_FONT}" size="8.5">{esc(codes[int(m.group(1))])}</font>'
+        body = codes[int(m.group(1))]
+        # Consolas carries no CJK glyphs; a span mixing them would lose the
+        # Chinese characters entirely, so fall back to the body face.
+        face = BODY_FONT if _has_cjk(body) else MONO_FONT
+        return f'<font face="{face}" size="8.5">{esc(body)}</font>'
 
     return re.sub(r"\x00(\d+)\x00", unstash, text)
 
@@ -247,16 +258,30 @@ def build_story(md: str, styles):
             continue
 
         # ---- list ----
-        if re.match(r"^\s*[-*+]\s+", line) or re.match(r"^\s*\d+\.\s+", line):
-            ordered = bool(re.match(r"^\s*\d+\.\s+", line))
+        if _BULLET_RE.match(line) or _ORDERED_RE.match(line):
+            ordered = bool(_ORDERED_RE.match(line))
             items: list[str] = []
             while i < n:
                 cur = lines[i]
-                mm = re.match(r"^\s*[-*+]\s+(.*)$", cur) or re.match(r"^\s*\d+\.\s+(.*)$", cur)
-                if not mm:
-                    break
-                items.append(mm.group(1))
-                i += 1
+                mm = _ORDERED_RE.match(cur) if ordered else _BULLET_RE.match(cur)
+                if mm:
+                    items.append(mm.group(1))
+                    i += 1
+                    continue
+                # Indented, non-blank lines continue the item they follow;
+                # without this, a wrapped item is split into an item plus a
+                # stray paragraph and the numbering restarts at 1.
+                if (
+                    items
+                    and cur.strip()
+                    and cur[:1] in (" ", "\t")
+                    and not _ORDERED_RE.match(cur)
+                    and not _BULLET_RE.match(cur)
+                ):
+                    items[-1] = items[-1] + " " + cur.strip()
+                    i += 1
+                    continue
+                break
             flush_list(items, ordered)
             continue
 
@@ -305,43 +330,62 @@ def _display_len(s):
     return sum(2.0 if _is_wide(ch) else 1.0 for ch in s)
 
 
+_BULLET_RE = re.compile(r"^\s*[-*+]\s+(.*)$")
+_ORDERED_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
 _CELL_SPLIT = re.compile(r"[\s\u3000]+")
 
 
-def _col_widths(header, rows, ncols):
+def _fits_one_line(para, width):
+    return para.wrap(width, 1e6)[1] <= para.style.leading + 0.01
+
+
+def _natural_width(para, cap):
+    """Smallest width at which the whole cell stays on a single line."""
+    lo = para.minWidth()
+    if lo >= cap or _fits_one_line(para, cap):
+        return cap
+    hi = cap
+    while hi - lo > 0.5:
+        mid = (lo + hi) / 2.0
+        if _fits_one_line(para, mid):
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+
+def _col_widths(data, ncols):
     """Size columns from measured text instead of splitting the page evenly.
 
     An even split wraps short-but-wide cells such as ``[4096,1024,64,256]`` and
     header words such as ``TTFT`` onto two lines, which makes the baseline table
-    hard to read. Measure with the actual font: each column first gets enough
-    room for its widest single word (so no word is broken), then the remaining
-    space is shared in proportion to how much more each column wants.
-    """
-    from reportlab.pdfbase.pdfmetrics import stringWidth
+    hard to read. Each column first gets enough room for its widest unbreakable
+    fragment (so nothing is split mid-token), then the leftover space is shared
+    in proportion to how much more each column wants.
 
-    font, size = BODY_FONT, 8.3
-    pad = 10.0  # left + right cell padding
-    avail = A4_WIDTH - LEFT_MARGIN - RIGHT_MARGIN
+    Widths are measured on the rendered Paragraphs, not on the raw markdown:
+    ``inline()`` rewrites backticked spans to a wider monospace font, so
+    measuring the source text underestimates and the column then overflows.
+    """
+    # Frame padding is 6pt per side on top of the doc margins; ignoring it
+    # shifts every table 6pt right and pushes it 6pt past the right margin.
+    avail = A4_WIDTH - LEFT_MARGIN - RIGHT_MARGIN - 12.0
+    pad = 8.0  # LEFTPADDING + RIGHTPADDING below
 
     need_min, need_max = [], []
     for c in range(ncols):
-        cells = [header[c] if c < len(header) else ""] + [
-            r[c] if c < len(r) else "" for r in rows
-        ]
-        widest_word = 1.0
-        widest_cell = 1.0
-        for cell in cells:
-            if not cell:
+        mn, mx = 1.0, 1.0
+        for row in data:
+            if c >= len(row):
                 continue
-            widest_cell = max(widest_cell, stringWidth(cell, font, size))
-            for word in _CELL_SPLIT.split(cell):
-                if word:
-                    widest_word = max(widest_word, stringWidth(word, font, size))
-        need_min.append(widest_word + pad)
-        need_max.append(widest_cell + pad)
+            para = row[c]
+            mn = max(mn, para.minWidth())
+            mx = max(mx, _natural_width(para, avail))
+        need_min.append(mn + pad)
+        need_max.append(mx + pad)
 
     if sum(need_min) >= avail:
-        # Cannot honour every word; fall back to proportional minimums.
+        # Cannot honour every fragment; fall back to proportional minimums.
         scale = avail / sum(need_min)
         return [w * scale for w in need_min]
 
@@ -367,7 +411,11 @@ def _table(header, rows, styles):
         data.append([_cell_para(c, styles) for c in _pad(r, ncols)])
 
     t = Table(data, repeatRows=1, hAlign="LEFT",
-              colWidths=_col_widths(header, rows, ncols))
+              colWidths=_col_widths(data, ncols))
+    # Deliberately NOT wrapped in KeepTogether: reportlab's keepWithNext glue
+    # skips any follower that _ktAllow() rejects, and it rejects _ContainerSpace
+    # subclasses -- so wrapping a table would silently disable the heading glue.
+    # Table headers repeat on continuation via repeatRows=1 above.
     t.setStyle(
         TableStyle(
             [
@@ -395,6 +443,204 @@ def _cell_para(text: str, styles, bold: bool = False):
     return Paragraph(f"<b>{txt}</b>" if bold else txt, styles["cell"])
 
 
+FONT_FILES: dict[str, "Path"] = {}
+_CMAP_CACHE: dict[str, set[int]] = {}
+
+
+# Closing punctuation that may not open a line. reportlab ships only U+3001 /
+# U+3002 and a few brackets in ALL_CANNOT_START; the fullwidth comma, semicolon
+# and friends are just as illegal and appear constantly in Chinese prose.
+_CANNOT_START_EXTRA = "\uff0c\uff1b\uff1a\uff01\uff1f\uff3d\uff5d\u300b\u3009\u3015\u2026"
+
+
+def _cannot_start_set() -> set[str]:
+    from reportlab.lib.textsplit import ALL_CANNOT_START
+
+    return set(ALL_CANNOT_START) | set(_CANNOT_START_EXTRA)
+
+
+def _is_word_char(ch) -> bool:
+    """Characters that must not be separated from their neighbours.
+
+    Section signs and fullwidth slashes glue a number to its prefix, so
+    ``\u00a72.3`` stays together instead of breaking after the sign.
+    """
+    if ch in "\u00a7\u00b6\uff0f/":
+        return True
+    return ch.isascii() and (ch.isalnum() or ch in "_.")
+
+
+def _break_cjk(chars, widths, max_widths, cannot):
+    """Break a run of characters into lines that respect width and kinsoku.
+
+    Returns a list of ``(start, end)`` index pairs. Starting from the greedy
+    break, two adjustments are applied while walking *backwards*:
+
+    * a closing punctuation mark may not open the next line, and
+    * a Latin identifier such as ``TRITON_ATTN`` is not split if it can be
+      avoided within a short look-back.
+
+    The break only ever moves earlier, so a line never exceeds ``max_width``.
+    """
+    lines = []
+    start = 0
+    n = len(chars)
+    while start < n:
+        max_w = max_widths[min(len(lines), len(max_widths) - 1)]
+        w = 0.0
+        end = start
+        while end < n:
+            cw = widths[end]
+            if w + cw > max_w + 1e-6 and end > start:
+                break
+            w += cw
+            end += 1
+        if end >= n:
+            lines.append((start, n))
+            break
+
+        # Closing punctuation may not open the next line.
+        while end > start + 1 and end < n and chars[end] in cannot:
+            end -= 1
+        # Do not split an identifier across the line break.
+        if end < n and _is_word_char(chars[end - 1]) and _is_word_char(chars[end]):
+            limit = max(start + 1, end - 24)
+            while end > limit and _is_word_char(chars[end - 1]):
+                end -= 1
+
+        lines.append((start, end))
+        start = end
+    return lines
+
+
+def install_cjk_kinsoku() -> bool:
+    """Make CJK line breaking respect width, kinsoku and identifier integrity.
+
+    reportlab breaks CJK text two ways: a paragraph of a single font run goes
+    through ``textsplit.wordSplit``, a paragraph carrying inline markup goes
+    through ``paragraph.cjkFragSplit``. Both share two defects for Chinese
+    prose: only a single character is pushed back, so ``\uff09\u3002`` leaves the
+    full stop alone at the start of the next line, and the push-back happens
+    after the fact, so it can split a Latin token. Route both through one
+    correct breaker. Returns True when the patches took effect.
+    """
+    try:
+        from reportlab.lib import textsplit as _ts
+        from reportlab.platypus import paragraph as _para
+
+        cannot = _cannot_start_set()
+
+        # --- single-fragment paragraphs -----------------------------------
+        def word_split(word, maxWidths, fontName, fontSize, encoding="utf8"):
+            uword = word if _ts.isUnicode(word) else word.decode(encoding)
+            widths = _ts.getCharWidths(uword, fontName, fontSize)
+            if not isinstance(maxWidths, (list, tuple)):
+                maxWidths = [maxWidths]
+
+            out = []
+            for start, end in _break_cjk(uword, widths, maxWidths, cannot):
+                extra = maxWidths[min(len(out), len(maxWidths) - 1)] - sum(
+                    widths[start:end]
+                )
+                text = uword[start:end]
+                out.append([extra, text.strip() if start else text])
+            if not _ts.isUnicode(word):
+                out = [[e, t.encode(encoding)] for e, t in out]
+            return out
+
+        _ts.wordSplit = word_split
+        _para.wordSplit = word_split
+
+        # --- multi-fragment paragraphs ------------------------------------
+        def cjk_frag_split(frags, maxWidths, calcBounds, encoding="utf8"):
+            U = []
+            for f in frags:
+                text = f.text
+                if _para.isBytes(text):
+                    text = text.decode(encoding)
+                if text:
+                    U.extend([_para.cjkU(t, f, encoding) for t in text])
+                else:
+                    U.append(_para.cjkU(text, f, encoding))
+
+            if not isinstance(maxWidths, (list, tuple)):
+                maxWidths = [maxWidths]
+            widths = [u.width for u in U]
+            chars = [str(u) for u in U]
+
+            # An explicit line break inside the markup ends a line early.
+            bounds, last = [], 0
+            for idx, u in enumerate(U):
+                if hasattr(u.frag, "lineBreak"):
+                    bounds.append((last, idx))
+                    last = idx
+            tail = _break_cjk(chars[last:], widths[last:], maxWidths, cannot)
+            bounds.extend((last + s, last + e) for s, e in tail)
+
+            lines = []
+            for start, end in bounds:
+                if end <= start:
+                    continue
+                max_w = maxWidths[min(len(lines), len(maxWidths) - 1)]
+                used = sum(widths[start:end])
+                lines.append(
+                    _para.makeCJKParaLine(
+                        U[start:end], max_w, used, max_w - used, False, calcBounds
+                    )
+                )
+            if not lines:
+                return _para.ParaLines(
+                    kind=1, lines=[],
+                    fontSize=frags[0].fontSize, fontName=frags[0].fontName,
+                )
+            return _para.ParaLines(kind=1, lines=lines)
+
+        _para.cjkFragSplit = cjk_frag_split
+        return True
+    except Exception:
+        return False
+
+
+def _font_cmap(face: str) -> set[int]:
+    """Codepoints the registered face can actually draw."""
+    if face in _CMAP_CACHE:
+        return _CMAP_CACHE[face]
+    cps: set[int] = set()
+    path = FONT_FILES.get(face)
+    if path is not None and path.exists():
+        try:
+            from fontTools.ttLib import TTCollection, TTFont
+
+            if path.suffix.lower() == ".ttc":
+                fonts = TTCollection(str(path)).fonts
+                ft = fonts[0]
+            else:
+                ft = TTFont(str(path))
+            cps = set(ft.getBestCmap() or {})
+        except Exception:
+            cps = set()
+    _CMAP_CACHE[face] = cps
+    return cps
+
+
+def _face_for(text: str, preferred: str) -> str:
+    """Preferred face when it can draw every glyph, else the CJK body face.
+
+    Monospace faces have no CJK coverage and miss a few symbols (Consolas has
+    no U+2713), so text mixing them would silently lose characters.
+    """
+    cps = _font_cmap(preferred)
+    if not cps:
+        return preferred
+    body = _font_cmap(BODY_FONT)
+    if body and all(ord(ch) in body for ch in text):
+        for ch in text:
+            if ch not in " \t\r\n" and ord(ch) not in cps:
+                return BODY_FONT
+        return preferred
+    return preferred
+
+
 def _has_cjk(text: str) -> bool:
     return any(
         "\u4e00" <= ch <= "\u9fff" or "\u3000" <= ch <= "\u303f" or "\uff00" <= ch <= "\uffef"
@@ -406,13 +652,24 @@ def _code_block(code: str, styles):
     from reportlab.lib import colors
     from reportlab.platypus import Paragraph, Table, TableStyle
 
-    lines = code.split("\n")
-    body = "<br/>".join(
-        esc(ln).replace(" ", "&nbsp;") if ln.strip() else "&nbsp;" for ln in lines
-    )
-    # No monospace font ships CJK glyphs, so a block containing Chinese would
-    # render as tofu boxes. Fall back to the proportional CJK font for those.
-    style = styles["code"] if not _has_cjk(code) else styles["code_cjk"]
+    code = _demojify(code)
+    mono_ok = not _has_cjk(code)
+    parts = []
+    for ln in code.split("\n"):
+        if not ln.strip():
+            parts.append("&nbsp;")
+            continue
+        txt = esc(ln).replace(" ", "&nbsp;")
+        if mono_ok:
+            # Keep the block monospace only on lines the mono face can draw;
+            # one stray symbol would otherwise become a tofu box.
+            face = _face_for(ln, MONO_FONT)
+            if face != MONO_FONT:
+                mono_ok = False
+                txt = f'<font face="{BODY_FONT}">{txt}</font>'
+        parts.append(txt)
+    body = "<br/>".join(parts)
+    style = styles["code"] if mono_ok else styles["code_cjk"]
     p = Paragraph(body, style)
     t = Table([[p]], hAlign="LEFT")
     t.setStyle(
@@ -521,18 +778,31 @@ def make_styles():
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import mm
 
-    base = dict(fontName=BODY_FONT, wordWrap="CJK", leading=14.5, fontSize=9.5)
+    # allowWidows=0 stops a single carried-over line from being stranded alone
+    # at the top of a page (reportlab permits it by default).
+    # allowWidows=0 stops a single carried-over line from being stranded alone
+    # at the top of a page (reportlab permits it by default).
+    base = dict(fontName=BODY_FONT, wordWrap="CJK", leading=14.5, fontSize=9.5,
+                allowWidows=0)
     return {
         "title": ParagraphStyle("title", fontName=BOLD_FONT, fontSize=17, leading=23,
                                 spaceAfter=4, wordWrap="CJK"),
+        # keepWithNext holds a heading back when its following block would not
+        # fit, so a section title never sits alone at the foot of a page. It is
+        # a look-ahead hint rather than a KeepTogether group: the follower may
+        # still split across pages, so this never blows up the page count.
         "h1": ParagraphStyle("h1", fontName=BOLD_FONT, fontSize=14.5, leading=20,
-                             spaceBefore=12, spaceAfter=4, wordWrap="CJK"),
+                             spaceBefore=12, spaceAfter=4, wordWrap="CJK",
+                             keepWithNext=1),
         "h2": ParagraphStyle("h2", fontName=BOLD_FONT, fontSize=12, leading=17,
-                             spaceBefore=10, spaceAfter=3, wordWrap="CJK"),
+                             spaceBefore=10, spaceAfter=3, wordWrap="CJK",
+                             keepWithNext=1),
         "h3": ParagraphStyle("h3", fontName=BOLD_FONT, fontSize=10.5, leading=15,
-                             spaceBefore=8, spaceAfter=2, wordWrap="CJK"),
+                             spaceBefore=8, spaceAfter=2, wordWrap="CJK",
+                             keepWithNext=1),
         "h4": ParagraphStyle("h4", fontName=BOLD_FONT, fontSize=9.8, leading=14,
-                             spaceBefore=6, spaceAfter=2, wordWrap="CJK"),
+                             spaceBefore=6, spaceAfter=2, wordWrap="CJK",
+                             keepWithNext=1),
         "body": ParagraphStyle("body", alignment=TA_JUSTIFY, spaceAfter=2, **base),
         "bullet": ParagraphStyle("bullet", leftIndent=16, bulletIndent=4, spaceAfter=2,
                                  **base),
@@ -623,6 +893,7 @@ def main(argv: list[str] | None = None) -> int:
     md += team_markdown(team)
 
     register_fonts()
+    install_cjk_kinsoku()
     render(md, out, title=f"算力申请 · {team_name}", subtitle="FlagOS S2 · 赛道二")
 
     size_mb = out.stat().st_size / 1024 / 1024
