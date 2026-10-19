@@ -69,3 +69,6 @@ credentials*
 *.log
 tmp/
 .cache/
+# Generated compute-application PDFs (contain personal info, never commit)
+proposals/算力申请-*.pdf
+proposals/_smoketest.pdf

@@ -1,0 +1,67 @@
+# SAMPLE team config — used to smoke-test the PDF pipeline.
+# This file must stay free of "TODO" so `build_proposal.py --team team.example.yaml`
+# can render end to end in CI. Replaced names/affiliations are clearly fictional.
+#
+# The real submission uses proposals/team.yaml.
+
+team_name: SampleTeam
+
+members:
+  - name: 示例成员A
+    role: 队长 / 推理系统优化
+    affiliation: 示例单位
+    email: a@example.com
+    background: |
+      从事 GPU 推理系统优化工作，负责过基于 vLLM 的多机多卡服务化部署，
+      熟悉 PagedAttention、连续批处理调度与 KV Cache 管理。
+      具备 Triton kernel 开发经验，独立实现过 RMSNorm / RoPE 融合算子。
+    experience: |
+      参与过校级算力平台推理加速项目，将 7B 模型的首 token 延迟降低约 40%。
+      熟悉 FlagOS 生态（FlagGems / FlagScale）与国产加速卡适配流程。
+    duty: |
+      负责 P0（attention 后端路径修复）与 P3（框架层降级项修复），
+      统筹两卡实验排期与最终技术报告撰写。
+
+  - name: 示例成员B
+    role: 算子与内核优化
+    affiliation: 示例单位
+    email: b@example.com
+    background: |
+      研究方向为异构计算与算子编译，熟悉 Triton 语言与 autotune 机制，
+      了解 FlashAttention 系列算法及其在 GQA 场景下的访存特征。
+    experience: |
+      参与过算子库移植项目，将一套 CUDA 算子适配到两类国产加速卡。
+    duty: |
+      负责 P1（两卡 autotune 收敛）与 P2（融合算子实现），
+      并维护精度回归流水线。
+
+  - name: 示例成员C
+    role: 评测与可复现性
+    affiliation: 示例单位
+    email: c@example.com
+    background: |
+      熟悉大模型评测体系（evalscope / lm-evaluation-harness），
+      具备实验数据管理与可复现性工程经验。
+    experience: |
+      维护过模型评测平台，负责多模型多数据集的自动化评测与结果归档。
+    duty: |
+      负责评测脚本、结果解析、baseline 复现校验与 readme.md 的复现说明编写。
+
+advisor:
+  name: ""
+  affiliation: ""
+  title: ""
+
+team_statement: |
+  三名成员均在项目周期内保持稳定投入，分工覆盖「框架层—算子层—评测层」三个层次，
+  互不阻塞可并行推进。团队已建立统一的实验记录规范：每次改动同时产出
+  4k 吞吐、16k 吞吐、TTFT 与 math_500 精度四项指标，并按 patch 粒度归档，
+  确保技术报告中的每条策略都能对应到可复现的代码改动。
+
+compute_request:
+  tianshu_bv150_card_days: 17
+  metax_c500_card_days: 8
+  note: |
+    天数占比更高，因为其优化空间更大、需要更多 profiling 与 autotune 迭代。
+    我们承诺按「不浪费算力资源」原则使用：不做无假设的暴力搜索，
+    每个实验都有明确的假设与证伪标准，未开发时段及时关机。
