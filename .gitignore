@@ -82,3 +82,7 @@ docs/competition/_pp*.png
 docs/competition/preview_p*.png
 proposals/_preview.*
 
+proposals/_noglue.pdf
+proposals/_nokinsoku.pdf
+scripts/_build_nokinsoku.py
+
