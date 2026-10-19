@@ -18,15 +18,32 @@
 
 ```
 [✅] 赛事情报收集        平台 API 全量抓取，规则/基线/赛程本地化
-[✅] 工程骨架            目录结构、脚本、远程仓库
-[🔄] 源码调研            vllm-plugin-FL / FlagGems 优化面测绘
-[⬜] 算力申请材料        技术方案 + 团队介绍 → 算力申请-[队名].pdf
-[⬜] 环境复现            两卡 baseline 自测
-[⬜] 优化与提交
+[✅] 工程骨架 + 远程仓库  GitHub: SOLECA794/minicpm5-2b-infer-opt-flagos
+[✅] 源码调研            vllm-plugin-FL / FlagGems 优化面测绘（附 file:line 证据）
+[✅] 根因定位            天数 16k 的 599s TTFT → attention 后端走错路径
+[✅] 技术方案正文         proposals/01-initial-technical-plan.md
+[✅] PDF 生成流水线       scripts/build_proposal.py（缺团队信息则拒绝生成）
+[⬜] 团队介绍            ← 需要 Jack 提供成员信息
+[⬜] 环境复现 / 优化      ← 等算力
 ```
 
 **关键路径**：算力申请截止 **11-10**，但遵循**先到先得**且审核需 5 个工作日——
 材料必须在 **10-21 前**投出，否则拿到卡的时间不够跑完两轮实验。
+
+### 核心发现
+
+天数 BI-V150 与沐曦 C500 的 **attention 后端不同**：
+
+| | 天数 | 沐曦 |
+|---|---|---|
+| 配置指定 | `[flagos, vendor:iluvatar, reference]` | `[vendor:metax]` |
+| 实际后端 | **vLLM 通用 `TRITON_ATTN`** | **MACA 原生 `FLASH_ATTN`** |
+
+天数源码注释直接写着 *"flash_attn is not available on iluvatar"*。
+而 FlagGems v5.3.5 **已经带完整的 FA2 实现**，vllm-plugin-FL **也已经写好了接入代码**
+（`AttentionFLBackend`，857 行），只是默认值 `VLLM_FL_USE_FLAGGEMS_ATTN="0"` 把它关掉了。
+
+详见 [`docs/research/root-cause-tianshu-16k.md`](docs/research/root-cause-tianshu-16k.md)。
 
 ---
 
@@ -46,7 +63,33 @@ python scripts/score.py --before bench/summary_base.csv \
                         --acc 0.958 --expert 85
 ```
 
-两个脚本都只用标准库，无第三方依赖。
+### 生成算力申请 PDF
+
+```bash
+# 1. 填写团队信息（把 TODO 全部替换掉）
+$EDITOR proposals/team.yaml
+
+# 2. 先校验，再生成
+python scripts/build_proposal.py --check
+python scripts/build_proposal.py
+#   → proposals/算力申请-<队名>.pdf
+```
+
+`build_proposal.py` 在 `team.yaml` 还有任何 `TODO` 时会**拒绝生成**，
+防止误提交未填完的材料。技术方案正文在
+[`proposals/01-initial-technical-plan.md`](proposals/01-initial-technical-plan.md)，
+PDF 生成时自动拼接团队介绍。
+
+依赖：`reportlab`、`PyYAML`。字体自动从 Windows 字体目录解析中文字形，
+找不到时退回内置 Adobe CJK 字体。
+
+### 校验生成的 PDF
+
+```bash
+python scripts/pdf_textdump.py proposals/算力申请-<队名>.pdf
+```
+
+四个脚本都只用标准库（`build_proposal.py` 额外需要 reportlab + PyYAML）。
 
 ---
 
@@ -62,11 +105,19 @@ python scripts/score.py --before bench/summary_base.csv \
 │   │   ├── timeline.md         倒排工期 + 风险登记
 │   │   ├── raw/                平台 API 原始 JSON
 │   │   └── *.png               官方 baseline 截图
-│   └── research/               源码调研（优化面测绘）
-├── proposals/                  算力申请材料正文
-├── scripts/                    工具脚本（无依赖）
+│   └── research/               源码调研（全部附 file:line 证据）
+│       ├── plugin-surface-map.md     vllm-plugin-FL 优化面测绘
+│       ├── flaggems-op-map.md        FlagGems 算子覆盖与机会
+│       └── root-cause-tianshu-16k.md 599s TTFT 根因分析
+├── proposals/                  算力申请材料
+│   ├── 01-initial-technical-plan.md  初步技术方案（评审 60%）
+│   ├── team.yaml                     团队介绍数据源（评审 40%）← 待填写
+│   └── team.example.yaml             示例，用于冒烟测试 PDF 流水线
+├── scripts/                    工具脚本
 │   ├── fetch_race.py           赛事元数据抓取 + diff
-│   └── score.py                成绩计算器 + 护栏校验
+│   ├── score.py                成绩计算器 + 护栏校验
+│   ├── build_proposal.py       Markdown → PDF（含 TODO 门禁）
+│   └── pdf_textdump.py         PDF 文本导出（无阅读器时校验用）
 ├── src/                        我们自己的优化实现
 ├── configs/                    实验配置
 ├── benchmarks/results/         实验数据
