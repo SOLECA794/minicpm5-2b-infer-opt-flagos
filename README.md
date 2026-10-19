@@ -24,9 +24,11 @@
 [✅] 技术方案正文         proposals/01-initial-technical-plan.md
 [✅] PDF 生成流水线       scripts/build_proposal.py（缺团队信息则拒绝生成）
 [✅] 团队介绍            单人参赛（苏子恒），proposals/team.yaml 已填全
-[✅] 算力申请材料        proposals/算力申请-苏子恒.pdf（9 页，0.53 MB）
+[✅] 算力申请材料        proposals/算力申请-Casprian.pdf（10 页，0.49 MB，正式书面体）
+[✅] 远程实验机接入      沐曦 C500 sGPU 切片已打通，见 docs/remote-server.md
 [⬜] 提交算力申请         ← 需在平台上传，先到先得
-[⬜] 环境复现 / 优化      ← 等算力
+[⬜] 框架可安装性验证     ← 可在现有 16 GB 切片上做
+[⬜] 环境复现 / 优化      ← 16k 基线复现需完整 64 GB 整卡
 ```
 
 **关键路径**：算力申请截止 **11-10**，但遵循**先到先得**且审核需 5 个工作日——
@@ -110,20 +112,22 @@ python scripts/pdf_textdump.py proposals/算力申请-<队名>.pdf
 │   │   ├── timeline.md         倒排工期 + 风险登记
 │   │   ├── raw/                平台 API 原始 JSON
 │   │   └── *.png               官方 baseline 截图
-│   └── research/               源码调研（全部附 file:line 证据）
-│       ├── plugin-surface-map.md     vllm-plugin-FL 优化面测绘
-│       ├── flaggems-op-map.md        FlagGems 算子覆盖与机会
-│       └── root-cause-tianshu-16k.md 599s TTFT 根因分析
+│   ├── research/               源码调研（全部附 file:line 证据）
+│   │   ├── plugin-surface-map.md     vllm-plugin-FL 优化面测绘
+│   │   ├── flaggems-op-map.md        FlagGems 算子覆盖与机会
+│   │   └── root-cause-tianshu-16k.md 599s TTFT 根因分析
+│   └── remote-server.md        远程实验机接入方式与实测规格
 ├── proposals/                  算力申请材料
 │   ├── 01-initial-technical-plan.md  初步技术方案（评审 60%）
 │   ├── team.yaml                     团队介绍数据源（评审 40%），已填全
-│   ├── 算力申请-苏子恒.pdf            提交件（9 页，0.53 MB）· 含联系方式，已 gitignore
+│   ├── 算力申请-Casprian.pdf          提交件（10 页，0.49 MB）· 含联系方式，已 gitignore
 │   └── team.example.yaml             虚构示例，用于冒烟测试 PDF 流水线
 ├── scripts/                    工具脚本
 │   ├── fetch_race.py           赛事元数据抓取 + diff
 │   ├── score.py                成绩计算器 + 护栏校验 + M0 baseline 门禁
 │   ├── build_proposal.py       Markdown → PDF（含 TODO 门禁）
-│   └── pdf_textdump.py         PDF 文本导出（无阅读器时校验用）
+│   ├── pdf_textdump.py         PDF 文本导出（无阅读器时校验用）
+│   └── remote/sshx.py          远程机登录 + base64 分块传文件（走 WSL python3）
 ├── src/                        我们自己的优化实现
 ├── configs/                    实验配置
 ├── benchmarks/results/         实验数据
@@ -190,6 +194,23 @@ git config core.sshCommand "ssh -o ControlMaster=no -o ControlPath=none"
 第二行是为了绕开 `~/.ssh/config` 里全局的 `ControlMaster auto` —— 复用已有
 socket 时 OpenSSH 会报 `getsockname failed: Not a socket`。
 若换到网络通畅的环境，改回 HTTPS 也可以，两者推的是同一个仓库。
+
+---
+
+## 远程实验机
+
+赛题提供沐曦曦云 C500 实验机，位于 SSHPiper 网关之后（仅密码认证，scp/sftp 被拦）。
+接入工具与实测规格见 [`docs/remote-server.md`](docs/remote-server.md)，要点：
+
+```bash
+# WSL 内调用（路径含 U+2011 连字符，勿手打）
+wsl bash -lc "python3 '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/sshx.py' exec 'mx-smi'"
+```
+
+* 凭据不入库：读 `~/.ssh/sshx.json` 或 `SSHX_*` 环境变量。
+* **必设** `export MACA_PATH=/opt/maca`，否则 `import triton` 报 `TypeError`。
+* 当前实例是 **1/4 算力 + 16 GB 显存**的 sGPU 切片，可做框架安装、算子功能验证与
+  kernel 微基准，但**无法复现 16k 基线**（需完整 64 GB 整卡）。
 
 ---
 

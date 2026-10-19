@@ -767,6 +767,12 @@ def team_markdown(team: dict) -> str:
         str(cr.get("note", "")).rstrip(),
         "",
     ]
+    commit = cr.get("commitment") or []
+    if commit:
+        lines += ["### 算力使用承诺", ""]
+        for item in commit:
+            lines.append(f"- {str(item).strip()}")
+        lines.append("")
     return "\n".join(lines)
 
 

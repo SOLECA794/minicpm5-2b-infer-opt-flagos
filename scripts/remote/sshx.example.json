@@ -1,0 +1,16 @@
+{
+  "password": "<all boxes share one password>",
+  "default": "root+vm-XXXXXXXXXXXX",
+  "hosts": {
+    "metax-a": {
+      "host": "140.207.205.81",
+      "port": 32222,
+      "user": "root+vm-XXXXXXXXXXXX"
+    },
+    "metax-b": {
+      "host": "140.207.205.81",
+      "port": 32222,
+      "user": "root+vm-YYYYYYYYYYYY"
+    }
+  }
+}

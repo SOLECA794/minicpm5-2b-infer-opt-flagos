@@ -87,3 +87,6 @@ proposals/_nokinsoku.pdf
 scripts/_build_nokinsoku.py
 
 docs/competition/_chk*.png
+
+# PDF 渲染预览（临时）
+proposals/_pv/
