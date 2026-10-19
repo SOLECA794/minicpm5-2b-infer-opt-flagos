@@ -37,6 +37,7 @@ benchmarks/results/*.csv
 benchmarks/results/*.json
 benchmarks/results/*.log
 !benchmarks/results/.gitkeep
+!benchmarks/results/example_*.csv
 
 # ---- model weights (never commit) ----
 *.safetensors
