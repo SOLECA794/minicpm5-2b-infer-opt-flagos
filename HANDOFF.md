@@ -52,6 +52,15 @@
 
 投递后把回执/工单号记到本文 §8 的变更日志里。
 
+> PDF 含手机号与邮箱，已被 `.gitignore` 排除，**不在仓库里**。
+> 若本机文件丢失，重新生成即可：
+>
+> ```powershell
+> python scripts/build_proposal.py     # → proposals/算力申请-Casprian.pdf
+> ```
+>
+> 前提是 `proposals/team.yaml` 与 `proposals/01-initial-technical-plan.md` 仍在（两者已入库）。
+
 ### 3.2 重新开机并确认实例规格
 
 用户已关机。重新开机后第一件事是确认这次拿到的是**整卡 64 GB** 还是仍是 16 GB 切片：
