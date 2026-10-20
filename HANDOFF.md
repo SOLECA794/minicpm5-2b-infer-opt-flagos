@@ -1,8 +1,8 @@
 # HANDOFF — 交接说明
 
-> 最后更新：2026-10-20 14:00 (UTC+8)
+> 最后更新：2026-10-20 23:05 (UTC+8)
 > 仓库：`origin/main`（`git log -1` 取最新提交；本文随该分支推送）
-> 一句话状态：**材料已就绪，卡在「向平台投递算力申请」这一步；代码侧无未提交改动。**
+> 一句话状态：**材料与工具链都已就绪（M0 已可一键跑）；服务器仍关机；M2 的合规前提今晚被重新审读，方案的表述必须改写。**
 
 本文写给「下一次接手的人（或下一次的自己）」。读完后应当能在 10 分钟内知道：
 现在在哪、什么已验证、什么被卡住、下一步具体做什么。
@@ -18,11 +18,16 @@
 | 根因定位（天数 16k 的 599 s TTFT） | ✅ 已定位 | `docs/research/root-cause-tianshu-16k.md` |
 | 技术方案正文 | ✅ 正式书面体 | `proposals/01-initial-technical-plan.md` |
 | 团队信息 | ✅ 已填全 | `proposals/team.yaml` |
-| **算力申请 PDF** | ✅ **已生成，待投递** | `proposals/算力申请-Casprian.pdf`（10 页 / 0.49 MB，gitignored） |
+| 算力申请 PDF | ✅ 已生成，待投递 | `proposals/算力申请-Casprian.pdf`（10 页 / 0.49 MB，gitignored） |
 | 远程实验机接入 | ⏸ 工具已验证，**实例已关机** | `scripts/remote/sshx.py`、`docs/remote-server.md` |
-| 框架安装 / 环境复现 | ⬜ 未开始 | — |
+| 远程编排 / 安装脚本 | ✅ **已写好并入库**（6421748） | `scripts/remote/run_m0.py`、`probe_env.sh`、`install_stack.sh` |
+| 框架安装 / 环境复现 | ⬜ 未开始（等开机） | — |
+| **合规红线复核** | ⚠️ **新发现，见 §4.3** | `docs/competition/rules-s2-track2.md:81` |
 
-**当前唯一的硬阻塞是人为动作**：把 PDF 上传到 flagos.io 的算力申请入口。技术侧没有阻塞。
+**当前的两个阻塞**：
+
+1. 人为动作：把 PDF 上传到 flagos.io 的算力申请入口（§3.1）。
+2. 实例关机：远程机没开机，任何实机工作都开不了（§3.2）。
 
 ---
 
@@ -35,7 +40,7 @@
 | 评审 | 12 月初 | — |
 
 原计划 **10-21 前投出**算力申请，才能在 11-20 前留出两轮完整实验的时间。
-今天已是 10-20，**这条线今天/明天必须走掉**。
+今天已是 10-20，**这条线明天必须走掉**。
 
 > 注：赛程日期来自 `docs/competition/raw/race_539vlt2p.json`。若平台页面有更新，
 > `python scripts/fetch_race.py --diff` 会以 exit 1 报警。
@@ -91,18 +96,21 @@
 >
 > 前提是 `proposals/team.yaml` 与 `proposals/01-initial-technical-plan.md` 仍在（两者已入库）。
 
-### 3.2 重新开机并确认实例规格
+### 3.2 开机后第一件事：跑 preflight
 
-用户已关机。重新开机后第一件事是确认这次拿到的是**整卡 64 GB** 还是仍是 16 GB 切片：
+用户重新开机后，**一条命令同时回答三个问题**（是不是整卡 / 显存够不够跑官方场景 / 框架装了没）：
 
 ```powershell
-wsl bash -lc "python3 '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/sshx.py' exec 'mx-smi'"
+wsl bash -lc "cd '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos' && python3 scripts/remote/run_m0.py preflight"
 ```
 
-判定依据见 `docs/remote-server.md` §2.1：`Vram Quota` 若是 `0/64000 MiB` 且
-`Compute 100%`，才是整卡；若是 `0/16000 MiB` / `Compute 25%`，仍是切片。
+它输出 remote identity、mx-smi 前 25 行、`classify()` 的判定 JSON、五个包的 import 结果，
+最后给一句 verdict：`torch usable ~X GiB -> official scenarios that fit: 4k, 16k / NONE`。
 
-* 整卡 → 直接进 §4 的 M0。
+判定依据见 `docs/remote-server.md` §2.1：`Vram Quota 0/64000 MiB` 且 `Compute 100%` 才是整卡；
+`0/16000 MiB` / `Compute 25%` 仍是切片。
+
+* 整卡 → 装栈（§3.4）→ 进 §4 的 M0。
 * 仍是切片 → 只能做 §5 的「切片可做项」，同时向平台申请整卡。
 
 ### 3.3 验证本机工具链仍然可用
@@ -112,6 +120,26 @@ cd 'D:\Desktop\minicpm5‑2b‑infer‑opt‑flagos'
 python scripts/score.py --demo          # 期望 self-check passed: 9/9
 python scripts/build_proposal.py --check # 期望 exit 0
 ```
+
+### 3.4 装栈（只在开机后做一次）
+
+远端机**没有** `vllm` / `FlagGems` / `vllm-plugin-FL`，必须自己装：
+
+```powershell
+# 上传（脚本很小，base64 分块几秒传完）
+wsl bash -lc "python3 '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/sshx.py' put '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/install_stack.sh' /data/work/install_stack.sh"
+wsl bash -lc "python3 '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/sshx.py' put '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos/scripts/remote/probe_env.sh' /data/work/probe_env.sh"
+
+# 后台跑（约 20–40 分钟，主要耗在 vllm 的 C++ 编译）
+wsl bash -lc "python3 '.../sshx.py' exec 'cd /data/work && mkdir -p logs && nohup bash install_stack.sh all > logs/install.log 2>&1 & echo started'"
+wsl bash -lc "python3 '.../sshx.py' exec 'tail -40 /data/work/logs/install.log'"
+```
+
+脚本分阶段幂等（`base|vllm|flaggems|plugin|verify|all`），失败可单阶段重跑。
+**关键约束：`flaggems` 必须先于 `plugin` 装** —— FlagGems 要 `setuptools<77`，
+plugin 要 `setuptools>=77.0.3`，顺序反了会互相覆盖。脚本已内置这个顺序。
+**绝不让 pip 动 torch**：FlagGems 的 metax extra 只认 MACA 3.7.2.0/3.8.1.0，
+与本机 3.7.1.5 不匹配，装了就毁掉 `2.8.0+metax3.7.1.3`。脚本里已不装任何 extra。
 
 ---
 
@@ -125,38 +153,84 @@ M1 归因确认（2 日）
   └─ profiler 分离 prefill / decode 的 kernel 占比，确认或修正 §2.4 的结论
        ↓
 M2 P0 打通（5 日）
-  └─ 天数侧 attention 从 TRITON_ATTN 切到 FlagGems FA2（AttentionFLBackend）
+  └─ 见 §4.3 / §4.4：优化 FlagGems attention kernel 本身，而不是「把开关打开」
        ↓ 验收：16k tok/s 提升 ≥30%，math_500 ≥0.95，TTFT ≤ 基线×1.01
 M3 P1 autotune（5 日）→ M4 P2 融合算子（5 日）→ M5 P3 收尾（3 日）
        ↓
 M6 报告与提交（11-18 ~ 11-20）
 ```
 
-### M0 为什么必须先做
+### 4.1 M0 用一条命令跑完
+
+```powershell
+# 全流程：preflight → serve → 等健康 → benchmark → 关机前 stop → 取回 CSV → 本地门禁
+wsl bash -lc "cd '/mnt/d/Desktop/minicpm5‑2b‑infer‑opt‑flagos' && python3 scripts/remote/run_m0.py all"
+```
+
+分步版（排障时用）：`preflight` / `serve` / `status` / `stop` / `bench` / `fetch` / `verify`。
+
+* `serve` 用的是官方参数（`--port 9031 --served-model-name minicpm --gpu-memory-utilization 0.85 --max-model-len 131072`），
+  并强制 `MACA_PATH=/opt/maca`、`VLLM_PLUGINS=fl`。
+* `bench` 用官方 test-cases `[[4096,1024,64,256],[16384,1024,64,128]]`。
+  **耗时说明**：脚本内 `RUNS=4`、`SKIP_FIRST=1`（`benchmark_throughput_serve.py:47,50`），
+  每个 case 跑 4 次丢第 1 次 → 2 个 case 共 **8 次 `vllm bench serve`**，12–15 分钟。
+* benchmark 的 CSV 目录是**相对路径** `benchmark_results`（`:438`），所以必须先 `cd /workspace`。
+
+### 4.2 M0 为什么必须先做
 
 评分是**相对提升**，分母就是官方 baseline。若实验机本身偏差 20%（共享卡、降频、
 `VLLM_PLUGINS` 没设、漏了天数的 `--compilation-config`、框架 commit 不符），
 之后每一次「提升」都是错误分母的产物。`score.py --verify-baseline` 就是这道门禁。
 
-### M2 的核心假设（整个方案的赌注）
+### 4.3 ⚠️ 合规红线（2026-10-20 晚复核，**优先级最高**）
+
+`docs/competition/rules-s2-track2.md` 的三条直接约束：
+
+| 行 | 原文 | 对我们的影响 |
+|---|---|---|
+| 76 | 允许的手段须是「**需要在框架有开发量**」的：显存管理、算子融合、内核重写、自研量化 | 提交物里必须有我们自己写的代码 |
+| 78 | 「要求 `vllm serve` 的参数和基线一致」 | **不能**靠调 `--gpu-memory-utilization` / `--max-num-seqs` / `--enforce-eager` 拿分 |
+| **81** | 「**禁止没有算子优化的情况下切换算子**，删掉框架主要算子选择逻辑等方式来进行模型性能优化」 | **原 M2 表述直接撞线** |
+
+**问题**：此前 M2 被写成「把天数的 attention 从 `TRITON_ATTN` 切到 FlagGems FA2」。
+这句话的动作就是**切换算子**，而它本身**不包含任何算子优化**。按 81 行，这是被禁止的手段，
+技术报告里这样写会被判「使用禁止的优化策略」→ 成绩无效。
+
+**改写的方向**（M2 仍然是方案赌注，只是价值来源要换）：
+
+* 优化对象必须是 **FlagGems 的 attention kernel 本体**：`src/flag_gems/ops/attention.py:1284 flash_attn_varlen_func`
+  在沐曦/天数上的 tile 尺寸、`num_warps`/`num_stages`、GQA 分组映射、split-KV 切分、
+  mask 分支、以及 decode 路径的 `reshape_and_cache_flash`。
+* 产出必须是 **FlagGems 侧的代码改动**（提交物里 `FlagGems/` 目录就是干这个的），
+  技术报告要能指着某几行说「我们把这个 kernel 的 X 改成了 Y，原因是 Z」。
+* 「切换」只能作为**接入手段**存在（把优化后的 kernel 接进服务），不能当作卖点本身。
+* 天数侧：`iluvatar.yaml:30-35` 的 `attention_backend` 顺序是 `[flagos, vendor:iluvatar, reference]`，
+  而 `flaggems.py:179-187` 里 `VLLM_FL_USE_FLAGGEMS_ATTN` 默认 `"0"` → 落到 `TRITON_ATTN`。
+* 沐曦侧：`metax.yaml:28-31` 的 `attention_backend` **只有** `[vendor:metax]`，
+  即 FlagGems FA2 根本没进候选，要接进来必须改这个 yaml —— 但只有在 kernel 真的被我们优化过之后才成立。
+
+> 这一条要在写报告前再核一遍原文。规则里 76 行的「泛化能力高」也在暗示：
+> 只在某一款芯片上 work 的 trick 分数不高。
+
+### 4.4 M2 的核心假设（证据已二次核实）
 
 天数 BI-V150 与沐曦 C500 的 attention 后端不同：
 
 | | 天数 BI-V150 | 沐曦 C500 |
 |---|---|---|
-| 分发配置 | `iluvatar.yaml`：`[flagos, vendor:iluvatar, reference]` | `metax.yaml`：`[vendor:metax]` |
+| 分发配置 | `iluvatar.yaml:30-35` → `[flagos, vendor:iluvatar, reference]` | `metax.yaml:28-31` → `[vendor:metax]` |
 | 实际后端 | **vLLM 通用 `TRITON_ATTN`** | **MACA 原生 `FLASH_ATTN`** |
 
-依据：
+依据（均已在本仓库源码里核对过行号）：
+
 * `vllm_fl/dispatch/backends/flaggems/flaggems.py:179-187` —— `VLLM_FL_USE_FLAGGEMS_ATTN` 默认 `"0"`，走 `TRITON_ATTN`
-* `vllm_fl/dispatch/backends/vendor/iluvatar/iluvatar.py:480-486` —— 注释原文 `# flash_attn is not available on iluvatar.`
-* 而 `vllm_fl/dispatch/backends/flaggems/impl/attention.py`（857 行，类 `AttentionFLBackend`）**已经写好了接入代码**
+* `vllm_fl/dispatch/backends/vendor/iluvatar/iluvatar.py:462-486` —— 注释原文 `# flash_attn is not available on iluvatar.`
+* `vllm_fl/platform.py:276` —— `call_op("attention_backend", use_mla=..., use_sparse=...)` 是唯一入口
+* `vllm_fl/dispatch/backends/flaggems/impl/attention.py`（857 行，类 `AttentionFLBackend`）**接入代码已写好**
 * FlagGems v5.3.5 已有完整 FA2：`src/flag_gems/ops/attention.py:1284 flash_attn_varlen_func`
 
-即：**组件全都在，只是默认值把它关掉了。**
-
 **该假设尚未被实机证实。** 现有证据只有：基线数据的算术自洽（`docs/competition/baselines.md`）
-+ 源码静态阅读。M1 阶段的第一件事就是拿 profiler 证伪或证实它。
++ 源码静态阅读。M1 第一件事就是拿 profiler 证伪或证实它。
 若被证伪，转向 P1 / P2 的框架层收益，不要在错误方向上继续投入。
 
 ---
@@ -166,12 +240,12 @@ M6 报告与提交（11-18 ~ 11-20）
 即使拿不到整卡，以下工作仍可推进。**但注意：16 GB 跑不了任何官方测试场景**
 （4k 需 17.82 GiB > 12.67 GiB 额度），以下全部只产出「对不对」而非「快不快」：
 
-1. **框架可安装性验证** —— 装 `vllm`（沐曦适配版）、`FlagGems v5.3.5`、
-   `vllm-plugin-FL@flagos-2026-s2`，确认能 import、能起服务。
+1. **框架可安装性验证** —— 用 `install_stack.sh` 装完，确认五个包能 import、`entry_points` 里有 `fl`。
 2. **算子功能验证** —— 用 ≤4k 短序列跑 `VLLM_FL_USE_FLAGGEMS_ATTN=1`，
-   先确认 FlagGems FA2 在沐曦上数值正确。
+   先确认 FlagGems FA2 在沐曦上数值正确（这一步是**功能验证**，不是性能优化，不构成 §4.3 的违规）。
 3. **kernel 微基准** —— `flash_attn_varlen_func` / `reshape_and_cache_flash`
-   单独计时，对照 MACA 原生 `flash_attn 2.6.3`。
+   单独计时，对照 MACA 原生 `flash_attn 2.6.3`。**这是 M2 真正需要的数据**，
+   切片上就能做，不必等整卡。
 4. **`fused_add_rms_norm` 原型** —— P2 的融合算子只需单卡小 batch 即可验证数值与带宽收益。
 5. **profiler 工具链打通** —— `/opt/mcProfiler-ubuntu18.04` 的采集与解析。
 
@@ -198,13 +272,13 @@ M6 报告与提交（11-18 ~ 11-20）
 * 远端网络：pypi 与阿里云镜像可达（pip 已配 `mirrors.aliyun.com`）、modelscope 可达；
   `huggingface.co` 超时。`github.com` 探测结果存疑，**装框架前先复核**，
   必要时用 gitee 镜像或本地打包上传。
+* 本机（Windows）到 pypi 已验证可达：`https://pypi.org/pypi/vllm/0.20.2/json` → 200，
+  `https://mirrors.aliyun.com/pypi/simple/vllm/` → 200。所以 vLLM 0.20.2 的 sdist 走 pip 下载没问题。
 
 ### 6.2 本机（Windows）
 
 * 工作目录 `D:\Desktop\minicpm5‑2b‑infer‑opt‑flagos`，连字符是 **U+2011**，
   不是 ASCII `-`。手打会「找不到路径」。
-* `write` / `edit` 工具在该目录报 `SetFileSecurityW EACCES (Win32 5)`。
-  **绕法**：先写到 `C:\Users\34511\AppData\Local\Temp\`，再 `Copy-Item` 覆盖。
 * 用 Python 改文件后**必须把 CRLF 归一为 LF**，否则 `git diff` 会把整文件算作重写
   （曾出现 1820 行的假 diff）。归一脚本思路：`p.write_bytes(p.read_bytes().replace(b"\r\n", b"\n"))`。
 * `git commit -m "多行中文带引号"` 会被解析成 pathspec 报错。
@@ -233,6 +307,21 @@ M6 报告与提交（11-18 ~ 11-20）
   会让 `_ktAllow()` 返回 False，**静默禁用整条标题粘合链**。
 * 短表格也不要包 `KeepTogether`，靠 `repeatRows=1` 让表头在续页重复。
 * 验收指标：`overflow 0.00 pt`、`kinsoku violations` 仅代码块内的 1–2 处、逐页目视。
+
+### 6.5 本次新增的三个远端脚本
+
+| 脚本 | 作用 | 关键点 |
+|---|---|---|
+| `scripts/remote/run_m0.py` | M0 全流程编排 | 子命令 `preflight/serve/status/stop/bench/fetch/verify/all`；官方参数只写一次 |
+| `scripts/remote/probe_env.sh` | 一次性环境+网络侦察 | 永远 `exit 0`，可反复跑；段落化输出 |
+| `scripts/remote/install_stack.sh` | 推理栈安装 | 分阶段幂等；`flaggems` 必须先于 `plugin`；不碰 torch |
+
+两个踩过的坑：
+
+* `--compilation-config` 的 JSON **必须带引号**，否则 bash 会拆成两个参数。已在 `run_m0.py` 里写成
+  `--compilation-config '{"cudagraph_mode": "FULL_DECODE_ONLY"}'`，并用 `bash -n` 验过。
+* `benchmark_throughput_serve.py` 的输出目录是相对路径，**必须先 `cd /workspace`**，
+  否则 CSV 落在别处、`fetch` 找不到。
 
 ---
 
@@ -263,6 +352,8 @@ M6 报告与提交（11-18 ~ 11-20）
 | 2026-10-20 | 推送 `b9ebc95`；更新 `D:\Desktop\gitee服务器使用工具包.md`（新增 §1.1 多实例、§3.1 sshx.py、§6.15、§8 GPU 规格） |
 | 2026-10-20 | **服务器关机**（用户操作）；写本文 |
 | 2026-10-20 | 算力预算测算入库 `docs/compute-budget.md`：2 台 / 90+40 h / 420 元；证明 16 GB 与 32 GB 均无法跑官方场景 |
+| 2026-10-20 | 提交 `6421748`：新增 `run_m0.py` / `probe_env.sh` / `install_stack.sh`；三者均在本机做过语法与单元校验 |
+| 2026-10-20 | **合规复核**：`rules-s2-track2.md:81` 禁止「没有算子优化就切换算子」→ M2 表述改写为「优化 FlagGems attention kernel 本体」，见 §4.3 |
 
 **待填**：
 
