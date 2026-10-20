@@ -12,6 +12,9 @@
 | 算子库 | [`FlagGems`](https://github.com/flagos-ai/FlagGems) `v5.3.5` |
 | 提交截止 | **2026-11-20 23:59 (UTC+8)** |
 
+> **接手本项目请先读 [`HANDOFF.md`](HANDOFF.md)** —— 当前状态、下一步动作、
+> 环境与踩坑速查都在那里。
+
 ---
 
 ## 当前状态
@@ -26,7 +29,8 @@
 [✅] 团队介绍            单人参赛（苏子恒），proposals/team.yaml 已填全
 [✅] 算力申请材料        proposals/算力申请-Casprian.pdf（10 页，0.49 MB，正式书面体）
 [✅] 远程实验机接入      沐曦 C500 sGPU 切片已打通，见 docs/remote-server.md
-[⬜] 提交算力申请         ← 需在平台上传，先到先得
+[⏸] 实验机              已关机（用户操作），重开后先确认是整卡还是切片
+[⬜] 提交算力申请         ← 需在平台上传，先到先得【当前唯一硬阻塞】
 [⬜] 框架可安装性验证     ← 可在现有 16 GB 切片上做
 [⬜] 环境复现 / 优化      ← 16k 基线复现需完整 64 GB 整卡
 ```
@@ -104,6 +108,7 @@ python scripts/pdf_textdump.py proposals/算力申请-<队名>.pdf
 
 ```
 .
+├── HANDOFF.md                  交接说明：现状 / 下一步 / 环境与踩坑
 ├── docs/
 │   ├── competition/            赛事官方信息（本地镜像 + 提炼）
 │   │   ├── README.md           速查：规则、评分、红线
